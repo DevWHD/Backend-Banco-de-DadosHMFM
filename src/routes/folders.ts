@@ -174,7 +174,7 @@ router.patch("/:id", async (req: Request, res: Response) => {
     const sql = getDb();
     const result = await sql`
       UPDATE folders SET name = ${name.trim()}, updated_at = NOW() 
-      WHERE id = ${parseInt(id)} RETURNING *
+      WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)} RETURNING *
     `;
 
     if (result.length === 0) {
@@ -235,7 +235,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const sql = getDb();
 
     // Delete the folder (CASCADE will handle children and files)
-    const result = await sql`DELETE FROM folders WHERE id = ${parseInt(id)} RETURNING *`;
+    const result = await sql`DELETE FROM folders WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)} RETURNING *`;
 
     if (result.length === 0) {
       res.status(404).json({ error: "Folder not found" });

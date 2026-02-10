@@ -109,7 +109,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
     const sql = getDb();
 
     // Get file to retrieve blob URL before deleting
-    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(id)}`;
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
 
     if (files.length === 0) {
       res.status(404).json({ error: "File not found" });
@@ -126,7 +126,7 @@ router.delete("/:id", async (req: Request, res: Response) => {
     }
 
     // Delete from database
-    await sql`DELETE FROM files WHERE id = ${parseInt(id)}`;
+    await sql`DELETE FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
 
     res.json({ success: true });
   } catch (error) {
