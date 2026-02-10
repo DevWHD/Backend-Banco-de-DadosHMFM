@@ -75,10 +75,25 @@ Após o deploy, acesse:
 
 ### Se o /api-docs aparecer em branco:
 
-1. Verifique se a variável `NODE_ENV=production` está configurada
-2. Acesse o dashboard do Vercel → "Deployments" → Clique no último deploy → "Functions"
-3. Veja os logs para identificar erros
-4. Certifique-se de que todas as variáveis de ambiente estão configuradas
+**SOLUÇÃO APLICADA**: Agora usamos uma spec JSON estática em vez de JSDoc parsing, que é muito mais confiável no Vercel.
+
+1. **Certifique-se de que o projeto foi re-deployado** após as últimas alterações
+2. **Limpe o cache do Vercel**:
+   - No dashboard: Settings → General → "Clear Build Cache & Redeploy"
+3. **Verifique as variáveis de ambiente no Vercel**:
+   ```
+   DATABASE_URL=sua-connection-string
+   NODE_ENV=production
+   FRONTEND_URL=sua-url-do-frontend
+   ```
+4. **Teste localmente primeiro**:
+   ```bash
+   npm run build
+   npm run dev
+   # Acesse: http://localhost:3001/api-docs
+   ```
+5. **Verifique os logs no Vercel**:
+   - Dashboard → Deployments → Clique no deploy → Functions → Logs
 
 ### Se aparecer erro 500:
 

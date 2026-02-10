@@ -1,0 +1,332 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Hospital Document Explorer API",
+    "version": "1.0.0",
+    "description": "API REST para gerenciamento de documentos hospitalares da SMS Rio",
+    "contact": {
+      "name": "SMS Rio"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Servidor de Desenvolvimento"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Folders",
+      "description": "Gerenciamento de pastas"
+    },
+    {
+      "name": "Files",
+      "description": "Gerenciamento de arquivos"
+    },
+    {
+      "name": "Upload",
+      "description": "Upload de arquivos"
+    }
+  ],
+  "paths": {
+    "/api/folders": {
+      "get": {
+        "summary": "Lista todas as pastas",
+        "tags": ["Folders"],
+        "description": "Retorna todas as pastas cadastradas ordenadas por nome",
+        "responses": {
+          "200": {
+            "description": "Lista de pastas retornada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Folder"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Cria uma nova pasta",
+        "tags": ["Folders"],
+        "description": "Cria uma nova pasta, opcionalmente como subpasta de outra",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Nome da pasta",
+                    "example": "DOCUMENTOS ADMINISTRATIVOS"
+                  },
+                  "parent_id": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "ID da pasta pai (opcional)",
+                    "example": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Pasta criada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Folder"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/folders/{id}": {
+      "patch": {
+        "summary": "Atualiza o nome de uma pasta",
+        "tags": ["Folders"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID da pasta"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Novo nome da pasta"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pasta atualizada com sucesso"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Deleta uma pasta",
+        "tags": ["Folders"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pasta deletada com sucesso"
+          }
+        }
+      }
+    },
+    "/api/files": {
+      "get": {
+        "summary": "Lista arquivos de uma pasta",
+        "tags": ["Files"],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "folder_id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            },
+            "description": "ID da pasta"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de arquivos retornada com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/File"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/files/{id}": {
+      "delete": {
+        "summary": "Deleta um arquivo",
+        "tags": ["Files"],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Arquivo deletado com sucesso"
+          }
+        }
+      }
+    },
+    "/api/upload": {
+      "post": {
+        "summary": "Faz upload de arquivos",
+        "tags": ["Upload"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["folder_id", "files"],
+                "properties": {
+                  "folder_id": {
+                    "type": "integer",
+                    "description": "ID da pasta de destino"
+                  },
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Arquivos enviados com sucesso"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Folder": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "ID da pasta",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Nome da pasta",
+            "example": "ALMOXERIFADO"
+          },
+          "parent_id": {
+            "type": "integer",
+            "nullable": true,
+            "description": "ID da pasta pai (null se for raiz)",
+            "example": null
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data de criação"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data de atualização"
+          }
+        }
+      },
+      "File": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "ID do arquivo",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Nome do arquivo",
+            "example": "protocolo.pdf"
+          },
+          "folder_id": {
+            "type": "integer",
+            "description": "ID da pasta",
+            "example": 1
+          },
+          "blob_url": {
+            "type": "string",
+            "description": "URL do arquivo no storage",
+            "example": "https://example.com/file.pdf"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Tamanho em bytes",
+            "example": 1024
+          },
+          "mime_type": {
+            "type": "string",
+            "description": "Tipo MIME do arquivo",
+            "example": "application/pdf"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data de criação"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Data de atualização"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "description": "Mensagem de erro",
+            "example": "Failed to fetch folders"
+          }
+        }
+      }
+    }
+  }
+}
