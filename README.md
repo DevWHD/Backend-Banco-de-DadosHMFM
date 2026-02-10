@@ -58,6 +58,30 @@ psql $DATABASE_URL -f ../scripts/001-create-schema.sql
 
 ## 🌐 Deploy
 
+### Vercel (Recomendado)
+1. Instale o Vercel CLI:
+```bash
+npm i -g vercel
+```
+
+2. Faça o deploy:
+```bash
+vercel --prod
+```
+
+3. Configure as variáveis de ambiente no dashboard da Vercel:
+   - `DATABASE_URL`
+   - `BLOB_READ_WRITE_TOKEN` (opcional)
+   - `FRONTEND_URL`
+   - `NODE_ENV=production`
+
+4. A documentação estará disponível em: `https://seu-projeto.vercel.app/api-docs`
+
+**Nota**: O projeto já está configurado com:
+- `vercel.json` - Configuração serverless
+- `api/index.ts` - Handler para Vercel
+- Swagger com URL dinâmica
+
 ### Railway
 ```bash
 railway up
