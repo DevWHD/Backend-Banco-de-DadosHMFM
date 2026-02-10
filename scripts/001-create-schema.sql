@@ -1,0 +1,59 @@
+-- Create folders table
+CREATE TABLE IF NOT EXISTS folders (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create files table
+CREATE TABLE IF NOT EXISTS files (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+  blob_url TEXT NOT NULL,
+  size BIGINT DEFAULT 0,
+  mime_type VARCHAR(255),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
+CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);
+
+-- Seed hospital department folders (sorted alphabetically)
+INSERT INTO folders (name, parent_id) VALUES
+  ('ALMOXERIFADO', NULL),
+  ('CCIH', NULL),
+  ('CENTRO DE ESTUDOS', NULL),
+  ('CGA', NULL),
+  ('CHEFIA DE ANESTESIA', NULL),
+  ('CHEFIA DE CLÍNICA MÉDICA', NULL),
+  ('CHEFIA DE ENFERMAGEM NEONATAL', NULL),
+  ('CHEFIA DE GINECOLOGIA', NULL),
+  ('CHEFIA DE NEONATOLOGIA', NULL),
+  ('CHEFIA DE OBSTETRÍCIA', NULL),
+  ('CHEFIA DE PACIENTES EXTERNOS', NULL),
+  ('CHEFIA DE PACIENTES INTERNOS', NULL),
+  ('CHEFIAS DE ENFERMAGEM', NULL),
+  ('CMA', NULL),
+  ('COMITÊ DE ÉTICA DE ENFERMAGEM', NULL),
+  ('COMITÊ DE ÉTICA MÉDICA', NULL),
+  ('COMITÊ DE ÓBITO MATERNO', NULL),
+  ('COMPRAS', NULL),
+  ('DIREÇÃO GERAL', NULL),
+  ('DOCUMENTAÇÃO MÉDICA', NULL),
+  ('DSADT', NULL),
+  ('FARMÁCIA', NULL),
+  ('FATURAMENTO', NULL),
+  ('LABORATÓRIOS', NULL),
+  ('MANUTENÇÃO', NULL),
+  ('NATS', NULL),
+  ('NSP', NULL),
+  ('NUTRIÇÃO', NULL),
+  ('RADIOLOGIA', NULL),
+  ('RH', NULL),
+  ('SERVIÇO SOCIAL', NULL)
+ON CONFLICT DO NOTHING;
