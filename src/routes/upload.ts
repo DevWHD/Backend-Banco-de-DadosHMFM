@@ -58,16 +58,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 // POST /api/upload - Upload files
 router.post("/", upload.array("files"), async (req: Request, res: Response) => {
   try {
-    // Validate that Vercel Blob is configured
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      console.error("[ERROR] BLOB_READ_WRITE_TOKEN is not configured!");
-      res.status(500).json({ 
-        error: "Server not properly configured", 
-        message: "BLOB_READ_WRITE_TOKEN environment variable is missing. Upload storage is not available."
-      });
-      return;
-    }
-
     const files = req.files as Express.Multer.File[];
     const { folder_id } = req.body;
 
@@ -85,13 +75,30 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      // Upload to Vercel Blob
-      console.log(`[DEBUG] Uploading to Vercel Blob: hospital/${folder_id}/${file.originalname}`);
-      const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
-        access: "public",
-      });
-      const blobUrl = blob.url;
-      console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
+      // Upload to Vercel Blob (if BLOB_READ_WRITE_TOKEN is set)
+      let blobUrl = "";
+      
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        console.log(`[DEBUG] Uploading to Vercel Blob: hospital/${folder_id}/${file.originalname}`);
+        try {
+          const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
+            access: "public",
+          });
+          blobUrl = blob.url;
+          console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
+        } catch (blobError) {
+          console.error(`[ERROR] Failed to upload to Vercel Blob:`, blobError);
+          res.status(500).json({ 
+            error: "Upload to storage failed", 
+            details: String(blobError)
+          });
+          return;
+        }
+      } else {
+        // Fallback: save URL placeholder if no blob storage
+        console.warn(`[WARN] BLOB_READ_WRITE_TOKEN not configured. Using fallback URL.`);
+        blobUrl = `/uploads/${folder_id}/${file.originalname}`;
+      }
 
       // Save record to database
       const result = await sql`
