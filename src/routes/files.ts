@@ -64,16 +64,6 @@ router.get("/", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * @swagger
- * /api/files/debug/storage-check:
- *   get:
- *     summary: Verifica se o Vercel Blob está configurado
- *     tags: [Debug]
- *     responses:
- *       200:
- *         description: Status da configuração
- */
 // GET /api/files/debug/storage-check - Check storage configuration
 router.get("/debug/storage-check", (_req: Request, res: Response) => {
   const hasToken = !!process.env.BLOB_READ_WRITE_TOKEN;
@@ -84,6 +74,62 @@ router.get("/debug/storage-check", (_req: Request, res: Response) => {
     token_preview: tokenPreview,
     message: hasToken ? "✅ Vercel Blob is configured" : "❌ BLOB_READ_WRITE_TOKEN not configured"
   });
+});
+
+/**
+ * @swagger
+ * /api/files/debug/invalid-files:
+ *   get:
+ *     summary: Lista arquivos com URLs inválidas (fallback local)
+ *     tags: [Debug]
+ */
+// GET /api/files/debug/invalid-files - List files without proper Vercel Blob URLs
+router.get("/debug/invalid-files", async (_req: Request, res: Response) => {
+  try {
+    const sql = getDb();
+    const files = await sql`SELECT id, name, blob_url FROM files WHERE blob_url LIKE '/uploads/%' ORDER BY id`;
+    
+    res.json({
+      count: files.length,
+      message: `Found ${files.length} files with fallback URLs (need to be re-uploaded with Vercel Blob)`,
+      files: files
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to list invalid files", details: String(error) });
+  }
+});
+
+/**
+ * @swagger
+ * /api/files/debug/cleanup-invalid:
+ *   delete:
+ *     summary: Deleta arquivos com URLs inválidas
+ *     tags: [Debug]
+ *     description: Remove todos os arquivos que foram salvos com fallback local (/uploads/...)
+ */
+// DELETE /api/files/debug/cleanup-invalid - Remove invalid files
+router.delete("/debug/cleanup-invalid", async (_req: Request, res: Response) => {
+  try {
+    const sql = getDb();
+    
+    // Find all invalid files
+    const invalidFiles = await sql`SELECT id FROM files WHERE blob_url LIKE '/uploads/%'`;
+    
+    if (invalidFiles.length === 0) {
+      return res.json({ message: "No invalid files to clean up" });
+    }
+    
+    // Delete them
+    await sql`DELETE FROM files WHERE blob_url LIKE '/uploads/%'`;
+    
+    res.json({
+      message: `Deleted ${invalidFiles.length} invalid files`,
+      count: invalidFiles.length,
+      action: "Please re-upload your files now. Make sure BLOB_READ_WRITE_TOKEN is configured!"
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to cleanup invalid files", details: String(error) });
+  }
 });
 
 /**
@@ -141,49 +187,29 @@ router.get("/:id/download", async (req: Request, res: Response) => {
     }
 
     const file = files[0];
-    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}`);
+    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}, mime_type: ${file.mime_type}`);
 
-    // If it's a Vercel Blob URL (starts with https), try to fetch and proxy it
-    if (file.blob_url && (file.blob_url.startsWith("https://") || file.blob_url.startsWith("http://"))) {
-      console.log(`[DEBUG] Attempting to fetch from: ${file.blob_url}`);
-      
-      try {
-        // Fetch the file from Vercel Blob
-        const response = await fetch(file.blob_url);
-        
-        if (!response.ok) {
-          console.error(`[ERROR] Failed to fetch file from blob: ${response.status} ${response.statusText}`);
-          res.status(404).json({ error: "File not found in storage", status: response.status });
-          return;
-        }
-
-        // Set proper headers
-        res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
-        res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
-        res.setHeader("Content-Length", file.size);
-
-        console.log(`[DEBUG] Proxying file: ${file.name} (${file.size} bytes)`);
-        
-        // Pipe the response to the client
-        const buffer = await response.arrayBuffer();
-        res.send(Buffer.from(buffer));
-        
-      } catch (fetchError) {
-        console.error(`[ERROR] Failed to fetch from blob URL:`, fetchError);
-        res.status(502).json({ error: "Failed to retrieve file from storage", details: String(fetchError) });
-      }
+    // If it's a Vercel Blob URL (starts with https), redirect to it with proper headers
+    if (file.blob_url && file.blob_url.startsWith("https://")) {
+      console.log(`[DEBUG] Redirecting to Vercel Blob URL: ${file.blob_url}`);
+      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
+      res.redirect(file.blob_url);
       return;
     }
 
     // If it's a local path (fallback URL)
     if (file.blob_url && file.blob_url.startsWith("/uploads/")) {
       console.log(`[DEBUG] Local path detected (fallback): ${file.blob_url}`);
-      res.status(404).json({ error: "File stored locally - storage not available", path: file.blob_url });
+      res.status(500).json({ 
+        error: "File not available", 
+        reason: "File was uploaded without Vercel Blob storage. Please upload again with proper configuration.",
+        path: file.blob_url 
+      });
       return;
     }
 
-    console.log(`[DEBUG] Unrecognized blob_url format: ${file.blob_url}`);
-    res.status(404).json({ error: "File storage not properly configured", blob_url: file.blob_url });
+    console.log(`[DEBUG] Invalid blob_url format: ${file.blob_url}`);
+    res.status(500).json({ error: "File storage not properly configured", blob_url: file.blob_url });
   } catch (error) {
     console.error("Error downloading file:", error);
     res.status(500).json({ error: "Failed to download file", details: String(error) });
