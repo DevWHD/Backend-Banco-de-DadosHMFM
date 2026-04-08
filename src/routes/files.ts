@@ -56,11 +56,34 @@ router.get("/", async (req: Request, res: Response) => {
       SELECT * FROM files WHERE folder_id = ${parseInt(folder_id as string)} ORDER BY name ASC
     `;
 
+    console.log(`[DEBUG] Listed ${files.length} files for folder_id: ${folder_id}`);
     res.json(files);
   } catch (error) {
     console.error("Error fetching files:", error);
-    res.status(500).json({ error: "Failed to fetch files" });
+    res.status(500).json({ error: "Failed to fetch files", details: String(error) });
   }
+});
+
+/**
+ * @swagger
+ * /api/files/debug/storage-check:
+ *   get:
+ *     summary: Verifica se o Vercel Blob está configurado
+ *     tags: [Debug]
+ *     responses:
+ *       200:
+ *         description: Status da configuração
+ */
+// GET /api/files/debug/storage-check - Check storage configuration
+router.get("/debug/storage-check", (_req: Request, res: Response) => {
+  const hasToken = !!process.env.BLOB_READ_WRITE_TOKEN;
+  const tokenPreview = hasToken ? `${process.env.BLOB_READ_WRITE_TOKEN?.substring(0, 10)}...` : "NOT_SET";
+  
+  res.json({
+    blob_configured: hasToken,
+    token_preview: tokenPreview,
+    message: hasToken ? "✅ Vercel Blob is configured" : "❌ BLOB_READ_WRITE_TOKEN not configured"
+  });
 });
 
 /**
@@ -118,13 +141,44 @@ router.get("/:id/download", async (req: Request, res: Response) => {
     }
 
     const file = files[0];
-    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}`);
+    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}`);
 
-    // If it's a Vercel Blob URL (starts with https), redirect to it
+    // If it's a Vercel Blob URL (starts with https), try to fetch and proxy it
     if (file.blob_url && (file.blob_url.startsWith("https://") || file.blob_url.startsWith("http://"))) {
-      console.log(`[DEBUG] Redirecting to: ${file.blob_url}`);
-      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
-      res.redirect(file.blob_url);
+      console.log(`[DEBUG] Attempting to fetch from: ${file.blob_url}`);
+      
+      try {
+        // Fetch the file from Vercel Blob
+        const response = await fetch(file.blob_url);
+        
+        if (!response.ok) {
+          console.error(`[ERROR] Failed to fetch file from blob: ${response.status} ${response.statusText}`);
+          res.status(404).json({ error: "File not found in storage", status: response.status });
+          return;
+        }
+
+        // Set proper headers
+        res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
+        res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
+        res.setHeader("Content-Length", file.size);
+
+        console.log(`[DEBUG] Proxying file: ${file.name} (${file.size} bytes)`);
+        
+        // Pipe the response to the client
+        const buffer = await response.arrayBuffer();
+        res.send(Buffer.from(buffer));
+        
+      } catch (fetchError) {
+        console.error(`[ERROR] Failed to fetch from blob URL:`, fetchError);
+        res.status(502).json({ error: "Failed to retrieve file from storage", details: String(fetchError) });
+      }
+      return;
+    }
+
+    // If it's a local path (fallback URL)
+    if (file.blob_url && file.blob_url.startsWith("/uploads/")) {
+      console.log(`[DEBUG] Local path detected (fallback): ${file.blob_url}`);
+      res.status(404).json({ error: "File stored locally - storage not available", path: file.blob_url });
       return;
     }
 
@@ -171,17 +225,33 @@ router.get("/:id", async (req: Request, res: Response) => {
     const { id } = req.params;
     const sql = getDb();
 
+    console.log(`[DEBUG] File info request for ID: ${id}`);
     const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
 
     if (files.length === 0) {
+      console.log(`[DEBUG] File not found with ID: ${id}`);
       res.status(404).json({ error: "File not found" });
       return;
     }
 
-    res.json(files[0]);
+    const file = files[0];
+    
+    // Add debug info
+    const fileWithDebug = {
+      ...file,
+      debug: {
+        blob_url_type: file.blob_url?.startsWith("https://") ? "VERCEL_BLOB" : 
+                       file.blob_url?.startsWith("/uploads/") ? "LOCAL_FALLBACK" : "UNKNOWN",
+        download_url: `/api/files/${file.id}/download`,
+        direct_blob_url: file.blob_url
+      }
+    };
+
+    console.log(`[DEBUG] File info:`, JSON.stringify(fileWithDebug, null, 2));
+    res.json(fileWithDebug);
   } catch (error) {
     console.error("Error fetching file:", error);
-    res.status(500).json({ error: "Failed to fetch file" });
+    res.status(500).json({ error: "Failed to fetch file", details: String(error) });
   }
 });
 
