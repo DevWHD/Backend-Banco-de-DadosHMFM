@@ -58,6 +58,16 @@ const upload = multer({ storage: multer.memoryStorage() });
 // POST /api/upload - Upload files
 router.post("/", upload.array("files"), async (req: Request, res: Response) => {
   try {
+    // Validate that Vercel Blob is configured
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      console.error("[ERROR] BLOB_READ_WRITE_TOKEN is not configured!");
+      res.status(500).json({ 
+        error: "Server not properly configured", 
+        message: "BLOB_READ_WRITE_TOKEN environment variable is missing. Upload storage is not available."
+      });
+      return;
+    }
+
     const files = req.files as Express.Multer.File[];
     const { folder_id } = req.body;
 
@@ -75,18 +85,13 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      // Upload to Vercel Blob (if BLOB_READ_WRITE_TOKEN is set)
-      let blobUrl = "";
-      
-      if (process.env.BLOB_READ_WRITE_TOKEN) {
-        const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
-          access: "public",
-        });
-        blobUrl = blob.url;
-      } else {
-        // Fallback: save URL placeholder if no blob storage
-        blobUrl = `/uploads/${folder_id}/${file.originalname}`;
-      }
+      // Upload to Vercel Blob
+      console.log(`[DEBUG] Uploading to Vercel Blob: hospital/${folder_id}/${file.originalname}`);
+      const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
+        access: "public",
+      });
+      const blobUrl = blob.url;
+      console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
 
       // Save record to database
       const result = await sql`
@@ -95,13 +100,14 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
         RETURNING *
       `;
 
+      console.log(`[DEBUG] File saved to database with blob_url: ${blobUrl}`);
       uploaded.push(result[0]);
     }
 
     res.status(201).json(uploaded);
   } catch (error) {
     console.error("Upload error:", error);
-    res.status(500).json({ error: "Upload failed" });
+    res.status(500).json({ error: "Upload failed", details: String(error) });
   }
 });
 

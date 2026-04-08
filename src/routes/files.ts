@@ -65,6 +65,128 @@ router.get("/", async (req: Request, res: Response) => {
 
 /**
  * @swagger
+ * /api/files/{id}/download:
+ *   get:
+ *     summary: Baixa um arquivo
+ *     tags: [Files]
+ *     description: Faz o download de um arquivo específico
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do arquivo
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Arquivo baixado com sucesso
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       302:
+ *         description: Redirecionamento para URL do arquivo (Vercel Blob)
+ *       404:
+ *         description: Arquivo não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Erro ao baixar arquivo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+// GET /api/files/:id/download - Download file (MUST be before /:id route)
+router.get("/:id/download", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const sql = getDb();
+
+    console.log(`[DEBUG] Download request for file ID: ${id}`);
+
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+
+    if (files.length === 0) {
+      console.log(`[DEBUG] File not found with ID: ${id}`);
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const file = files[0];
+    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}`);
+
+    // If it's a Vercel Blob URL (starts with https), redirect to it
+    if (file.blob_url && (file.blob_url.startsWith("https://") || file.blob_url.startsWith("http://"))) {
+      console.log(`[DEBUG] Redirecting to: ${file.blob_url}`);
+      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
+      res.redirect(file.blob_url);
+      return;
+    }
+
+    console.log(`[DEBUG] Unrecognized blob_url format: ${file.blob_url}`);
+    res.status(404).json({ error: "File storage not properly configured", blob_url: file.blob_url });
+  } catch (error) {
+    console.error("Error downloading file:", error);
+    res.status(500).json({ error: "Failed to download file", details: String(error) });
+  }
+});
+
+/**
+ * @swagger
+ * /api/files/{id}:
+ *   get:
+ *     summary: Obtém informações de um arquivo
+ *     tags: [Files]
+ *     description: Retorna as informações de um arquivo específico
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do arquivo
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Informações do arquivo retornadas com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/File'
+ *       404:
+ *         description: Arquivo não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+// GET /api/files/:id - Get file info
+router.get("/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const sql = getDb();
+
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+
+    if (files.length === 0) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    res.json(files[0]);
+  } catch (error) {
+    console.error("Error fetching file:", error);
+    res.status(500).json({ error: "Failed to fetch file" });
+  }
+});
+
+/**
+ * @swagger
  * /api/files/{id}:
  *   delete:
  *     summary: Deleta um arquivo
@@ -132,73 +254,6 @@ router.delete("/:id", async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Error deleting file:", error);
     res.status(500).json({ error: "Failed to delete file" });
-  }
-});
-
-/**
- * @swagger
- * /api/files/{id}/download:
- *   get:
- *     summary: Baixa um arquivo
- *     tags: [Files]
- *     description: Faz o download de um arquivo específico
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID do arquivo
- *         example: 1
- *     responses:
- *       200:
- *         description: Arquivo baixado com sucesso
- *         content:
- *           application/octet-stream:
- *             schema:
- *               type: string
- *               format: binary
- *       302:
- *         description: Redirecionamento para URL do arquivo (Vercel Blob)
- *       404:
- *         description: Arquivo não encontrado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Erro ao baixar arquivo
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-// GET /api/files/:id/download - Download file
-router.get("/:id/download", async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const sql = getDb();
-
-    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
-
-    if (files.length === 0) {
-      res.status(404).json({ error: "File not found" });
-      return;
-    }
-
-    const file = files[0];
-
-    // If it's a Vercel Blob URL (starts with https), redirect to it
-    if (file.blob_url.startsWith("https://")) {
-      res.redirect(file.blob_url);
-      return;
-    }
-
-    // If it's a local path, return error (local storage not implemented)
-    res.status(404).json({ error: "File storage not properly configured" });
-  } catch (error) {
-    console.error("Error downloading file:", error);
-    res.status(500).json({ error: "Failed to download file" });
   }
 });
 
