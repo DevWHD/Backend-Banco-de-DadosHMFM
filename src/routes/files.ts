@@ -135,4 +135,71 @@ router.delete("/:id", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/files/{id}/download:
+ *   get:
+ *     summary: Baixa um arquivo
+ *     tags: [Files]
+ *     description: Faz o download de um arquivo específico
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do arquivo
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Arquivo baixado com sucesso
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       302:
+ *         description: Redirecionamento para URL do arquivo (Vercel Blob)
+ *       404:
+ *         description: Arquivo não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Erro ao baixar arquivo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+// GET /api/files/:id/download - Download file
+router.get("/:id/download", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const sql = getDb();
+
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+
+    if (files.length === 0) {
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const file = files[0];
+
+    // If it's a Vercel Blob URL (starts with https), redirect to it
+    if (file.blob_url.startsWith("https://")) {
+      res.redirect(file.blob_url);
+      return;
+    }
+
+    // If it's a local path, return error (local storage not implemented)
+    res.status(404).json({ error: "File storage not properly configured" });
+  } catch (error) {
+    console.error("Error downloading file:", error);
+    res.status(500).json({ error: "Failed to download file" });
+  }
+});
+
 export default router;
