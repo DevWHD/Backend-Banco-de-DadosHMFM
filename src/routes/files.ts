@@ -196,14 +196,16 @@ router.get("/:id/download", async (req: Request, res: Response) => {
       return;
     }
 
-    // Convert BYTEA to Buffer
+    // Convert file_data to Buffer
     let fileBuffer: Buffer;
+    
     if (file.file_data instanceof Buffer) {
       fileBuffer = file.file_data;
     } else if (typeof file.file_data === "string") {
-      // Handle different encodings if needed
-      fileBuffer = Buffer.from(file.file_data, "binary");
+      // If it's a string (hex encoded by postgres), convert it
+      fileBuffer = Buffer.from(file.file_data, "hex");
     } else {
+      // Try to convert whatever it is to a buffer
       fileBuffer = Buffer.from(file.file_data);
     }
 

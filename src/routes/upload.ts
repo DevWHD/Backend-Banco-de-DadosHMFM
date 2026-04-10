@@ -87,13 +87,23 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
       // Use a generic blob_url since we're storing in the database
       const blobUrl = `db://file/${file.originalname}`;
       
-      console.log(`[DEBUG] Storing file in PostgreSQL database: ${file.originalname}`);
+      console.log(`[DEBUG] Storing file in PostgreSQL database: ${file.originalname}, size: ${file.size}`);
+
+      // Convert buffer to base64 for BYTEA storage
+      const fileBase64 = file.buffer.toString("base64");
 
       // Save record to database with file content as BYTEA
       try {
         const result = await sql`
           INSERT INTO files (name, folder_id, blob_url, file_data, size, mime_type)
-          VALUES (${file.originalname}, ${folder_id}, ${blobUrl}, ${file.buffer}, ${file.size}, ${file.mimetype})
+          VALUES (
+            ${file.originalname}, 
+            ${folder_id}, 
+            ${blobUrl}, 
+            decode(${fileBase64}, 'base64'),
+            ${file.size}, 
+            ${file.mimetype}
+          )
           RETURNING id, name, folder_id, size, mime_type, created_at, updated_at
         `;
         console.log(`[DEBUG] File saved to database:`, result[0]);
