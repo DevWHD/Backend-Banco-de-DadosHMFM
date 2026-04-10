@@ -281,63 +281,7 @@ router.get("/:id", async (req: Request, res: Response) => {
   }
 });
 
-/**
- * @swagger
- * /api/files/{id}/download:
- *   get:
- *     summary: Baixa um arquivo
- *     tags: [Files]
- *     description: Redireciona para o URL do arquivo no Vercel Blob ou faz download direto
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID do arquivo
- *         example: 1
- *     responses:
- *       302:
- *         description: Redirecionamento para o URL do arquivo
- *       404:
- *         description: Arquivo não encontrado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *       500:
- *         description: Erro ao fazer download
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- */
-// GET /api/files/:id/download - Download file
-router.get("/:id/download", async (req: Request, res: Response) => {
-  try {
-    const { id } = req.params;
-    const sql = getDb();
 
-    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
-
-    if (files.length === 0) {
-      res.status(404).json({ error: "File not found" });
-      return;
-    }
-
-    const file = files[0];
-
-    // Redireciona para o URL do Vercel Blob
-    if (file.blob_url) {
-      res.redirect(file.blob_url);
-    } else {
-      res.status(404).json({ error: "File URL not found" });
-    }
-  } catch (error) {
-    console.error("Error downloading file:", error);
-    res.status(500).json({ error: "Failed to download file" });
-  }
-});
 
 /**
  * @swagger
