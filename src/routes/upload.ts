@@ -5,9 +5,6 @@ import { getDb } from "../config/database";
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-const router = Router();
-const upload = multer({ storage: multer.memoryStorage() });
-
 /**
  * @swagger
  * /api/upload:
@@ -84,32 +81,20 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      // Use a generic blob_url since we're storing in the database
-      const blobUrl = `db://file/${file.originalname}`;
+      // Store file reference with simple URL
+      const blobUrl = `file://${file.originalname}`;
       
-      console.log(`[DEBUG] Storing file in PostgreSQL database: ${file.originalname}, size: ${file.size}`);
+      console.log(`[DEBUG] Registering file: ${file.originalname}, size: ${file.size}`);
 
-      // Save record to database with file content as BYTEA
+      // Save record to database
       try {
         const result = await sql`
-          INSERT INTO files (name, folder_id, blob_url, file_data, size, mime_type)
-          VALUES (
-            ${file.originalname}, 
-            ${folder_id}, 
-            ${blobUrl}, 
-            ${file.buffer},
-            ${file.size}, 
-            ${file.mimetype}
-          )
+          INSERT INTO files (name, folder_id, blob_url, size, mime_type)
+          VALUES (${file.originalname}, ${folder_id}, ${blobUrl}, ${file.size}, ${file.mimetype})
           RETURNING id, name, folder_id, size, mime_type, created_at, updated_at
         `;
-        console.log(`[DEBUG] File saved to database:`, result[0]);
-        
-        // Return file info without the binary data
-        uploaded.push({
-          ...result[0],
-          download_url: `/api/files/${result[0].id}/download`
-        });
+        console.log(`[DEBUG] File registered in database:`, result[0]);
+        uploaded.push(result[0]);
       } catch (dbError) {
         console.error(`[ERROR] Failed to save to database:`, dbError);
         res.status(500).json({ 
