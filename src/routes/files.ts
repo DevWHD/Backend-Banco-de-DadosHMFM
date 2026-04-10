@@ -189,15 +189,18 @@ router.get("/:id/download", async (req: Request, res: Response) => {
     const file = files[0];
     console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}, mime_type: ${file.mime_type}`);
 
-    // If it's a Vercel Blob URL (starts with https), redirect to it with proper headers
+    // Se for URL do Vercel Blob (https), redireciona com headers de download
     if (file.blob_url && file.blob_url.startsWith("https://")) {
       console.log(`[DEBUG] Redirecting to Vercel Blob URL: ${file.blob_url}`);
-      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
+      // Define headers para força download com o nome original
+      res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+      res.setHeader("Cache-Control", "public, max-age=3600");
       res.redirect(file.blob_url);
       return;
     }
 
-    // If it's a local path (fallback URL)
+    // Se for caminho local (fallback)
     if (file.blob_url && file.blob_url.startsWith("/uploads/")) {
       console.log(`[DEBUG] Local path detected (fallback): ${file.blob_url}`);
       res.status(500).json({ 
