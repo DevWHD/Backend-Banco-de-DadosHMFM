@@ -59,10 +59,17 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.post("/", upload.array("files"), async (req: Request, res: Response) => {
   try {
     const files = req.files as Express.Multer.File[];
-    const { folder_id } = req.body;
-
-    if (!folder_id) {
+    const folderIdParam = req.body.folder_id;
+    
+    // Validar folder_id
+    if (!folderIdParam) {
       res.status(400).json({ error: "folder_id is required" });
+      return;
+    }
+
+    const folder_id = parseInt(folderIdParam);
+    if (isNaN(folder_id)) {
+      res.status(400).json({ error: "folder_id must be a valid integer" });
       return;
     }
 
@@ -75,7 +82,6 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      // Upload to Vercel Blob (if BLOB_READ_WRITE_TOKEN is set)
       let blobUrl = "";
       
       if (process.env.BLOB_READ_WRITE_TOKEN) {
@@ -95,20 +101,27 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
           return;
         }
       } else {
-        // Fallback: save URL placeholder if no blob storage
         console.warn(`[WARN] BLOB_READ_WRITE_TOKEN not configured. Using fallback URL.`);
         blobUrl = `/uploads/${folder_id}/${file.originalname}`;
       }
 
       // Save record to database
-      const result = await sql`
-        INSERT INTO files (name, folder_id, blob_url, size, mime_type)
-        VALUES (${file.originalname}, ${parseInt(folder_id)}, ${blobUrl}, ${file.size}, ${file.mimetype})
-        RETURNING *
-      `;
-
-      console.log(`[DEBUG] File saved to database with blob_url: ${blobUrl}`);
-      uploaded.push(result[0]);
+      try {
+        const result = await sql`
+          INSERT INTO files (name, folder_id, blob_url, size, mime_type)
+          VALUES (${file.originalname}, ${folder_id}, ${blobUrl}, ${file.size}, ${file.mimetype})
+          RETURNING *
+        `;
+        console.log(`[DEBUG] File saved to database:`, result[0]);
+        uploaded.push(result[0]);
+      } catch (dbError) {
+        console.error(`[ERROR] Failed to save to database:`, dbError);
+        res.status(500).json({ 
+          error: "Failed to save file to database", 
+          details: String(dbError)
+        });
+        return;
+      }
     }
 
     res.status(201).json(uploaded);
