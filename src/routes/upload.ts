@@ -89,9 +89,6 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
       
       console.log(`[DEBUG] Storing file in PostgreSQL database: ${file.originalname}, size: ${file.size}`);
 
-      // Convert buffer to base64 for BYTEA storage
-      const fileBase64 = file.buffer.toString("base64");
-
       // Save record to database with file content as BYTEA
       try {
         const result = await sql`
@@ -100,7 +97,7 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
             ${file.originalname}, 
             ${folder_id}, 
             ${blobUrl}, 
-            decode(${fileBase64}, 'base64'),
+            ${file.buffer},
             ${file.size}, 
             ${file.mimetype}
           )
