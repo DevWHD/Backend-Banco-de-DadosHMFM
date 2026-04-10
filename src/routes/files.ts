@@ -56,10 +56,228 @@ router.get("/", async (req: Request, res: Response) => {
       SELECT * FROM files WHERE folder_id = ${parseInt(folder_id as string)} ORDER BY name ASC
     `;
 
+    console.log(`[DEBUG] Listed ${files.length} files for folder_id: ${folder_id}`);
     res.json(files);
   } catch (error) {
     console.error("Error fetching files:", error);
-    res.status(500).json({ error: "Failed to fetch files" });
+    res.status(500).json({ error: "Failed to fetch files", details: String(error) });
+  }
+});
+
+// GET /api/files/debug/storage-check - Check storage configuration
+router.get("/debug/storage-check", (_req: Request, res: Response) => {
+  const hasToken = !!process.env.BLOB_READ_WRITE_TOKEN;
+  const tokenPreview = hasToken ? `${process.env.BLOB_READ_WRITE_TOKEN?.substring(0, 10)}...` : "NOT_SET";
+  
+  res.json({
+    blob_configured: hasToken,
+    token_preview: tokenPreview,
+    message: hasToken ? "✅ Vercel Blob is configured" : "❌ BLOB_READ_WRITE_TOKEN not configured"
+  });
+});
+
+/**
+ * @swagger
+ * /api/files/debug/invalid-files:
+ *   get:
+ *     summary: Lista arquivos com URLs inválidas (fallback local)
+ *     tags: [Debug]
+ */
+// GET /api/files/debug/invalid-files - List files without proper Vercel Blob URLs
+router.get("/debug/invalid-files", async (_req: Request, res: Response) => {
+  try {
+    const sql = getDb();
+    const files = await sql`SELECT id, name, blob_url FROM files WHERE blob_url LIKE '/uploads/%' ORDER BY id`;
+    
+    res.json({
+      count: files.length,
+      message: `Found ${files.length} files with fallback URLs (need to be re-uploaded with Vercel Blob)`,
+      files: files
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to list invalid files", details: String(error) });
+  }
+});
+
+/**
+ * @swagger
+ * /api/files/debug/cleanup-invalid:
+ *   delete:
+ *     summary: Deleta arquivos com URLs inválidas
+ *     tags: [Debug]
+ *     description: Remove todos os arquivos que foram salvos com fallback local (/uploads/...)
+ */
+// DELETE /api/files/debug/cleanup-invalid - Remove invalid files
+router.delete("/debug/cleanup-invalid", async (_req: Request, res: Response) => {
+  try {
+    const sql = getDb();
+    
+    // Find all invalid files
+    const invalidFiles = await sql`SELECT id FROM files WHERE blob_url LIKE '/uploads/%'`;
+    
+    if (invalidFiles.length === 0) {
+      return res.json({ message: "No invalid files to clean up" });
+    }
+    
+    // Delete them
+    await sql`DELETE FROM files WHERE blob_url LIKE '/uploads/%'`;
+    
+    res.json({
+      message: `Deleted ${invalidFiles.length} invalid files`,
+      count: invalidFiles.length,
+      action: "Please re-upload your files now. Make sure BLOB_READ_WRITE_TOKEN is configured!"
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to cleanup invalid files", details: String(error) });
+  }
+});
+
+/**
+ * @swagger
+ * /api/files/{id}/download:
+ *   get:
+ *     summary: Baixa um arquivo
+ *     tags: [Files]
+ *     description: Faz o download de um arquivo específico
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do arquivo
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Arquivo baixado com sucesso
+ *         content:
+ *           application/octet-stream:
+ *             schema:
+ *               type: string
+ *               format: binary
+ *       302:
+ *         description: Redirecionamento para URL do arquivo (Vercel Blob)
+ *       404:
+ *         description: Arquivo não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Erro ao baixar arquivo
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+// GET /api/files/:id/download - Download file (MUST be before /:id route)
+router.get("/:id/download", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const sql = getDb();
+
+    console.log(`[DEBUG] Download request for file ID: ${id}`);
+
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+
+    if (files.length === 0) {
+      console.log(`[DEBUG] File not found with ID: ${id}`);
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const file = files[0];
+    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}, mime_type: ${file.mime_type}`);
+
+    // If it's a Vercel Blob URL (starts with https), redirect to it with proper headers
+    if (file.blob_url && file.blob_url.startsWith("https://")) {
+      console.log(`[DEBUG] Redirecting to Vercel Blob URL: ${file.blob_url}`);
+      res.setHeader("Content-Disposition", `attachment; filename="${file.name}"`);
+      res.redirect(file.blob_url);
+      return;
+    }
+
+    // If it's a local path (fallback URL)
+    if (file.blob_url && file.blob_url.startsWith("/uploads/")) {
+      console.log(`[DEBUG] Local path detected (fallback): ${file.blob_url}`);
+      res.status(500).json({ 
+        error: "File not available", 
+        reason: "File was uploaded without Vercel Blob storage. Please upload again with proper configuration.",
+        path: file.blob_url 
+      });
+      return;
+    }
+
+    console.log(`[DEBUG] Invalid blob_url format: ${file.blob_url}`);
+    res.status(500).json({ error: "File storage not properly configured", blob_url: file.blob_url });
+  } catch (error) {
+    console.error("Error downloading file:", error);
+    res.status(500).json({ error: "Failed to download file", details: String(error) });
+  }
+});
+
+/**
+ * @swagger
+ * /api/files/{id}:
+ *   get:
+ *     summary: Obtém informações de um arquivo
+ *     tags: [Files]
+ *     description: Retorna as informações de um arquivo específico
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID do arquivo
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: Informações do arquivo retornadas com sucesso
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/File'
+ *       404:
+ *         description: Arquivo não encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
+// GET /api/files/:id - Get file info
+router.get("/:id", async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const sql = getDb();
+
+    console.log(`[DEBUG] File info request for ID: ${id}`);
+    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+
+    if (files.length === 0) {
+      console.log(`[DEBUG] File not found with ID: ${id}`);
+      res.status(404).json({ error: "File not found" });
+      return;
+    }
+
+    const file = files[0];
+    
+    // Add debug info
+    const fileWithDebug = {
+      ...file,
+      debug: {
+        blob_url_type: file.blob_url?.startsWith("https://") ? "VERCEL_BLOB" : 
+                       file.blob_url?.startsWith("/uploads/") ? "LOCAL_FALLBACK" : "UNKNOWN",
+        download_url: `/api/files/${file.id}/download`,
+        direct_blob_url: file.blob_url
+      }
+    };
+
+    console.log(`[DEBUG] File info:`, JSON.stringify(fileWithDebug, null, 2));
+    res.json(fileWithDebug);
+  } catch (error) {
+    console.error("Error fetching file:", error);
+    res.status(500).json({ error: "Failed to fetch file", details: String(error) });
   }
 });
 

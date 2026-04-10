@@ -79,12 +79,24 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
       let blobUrl = "";
       
       if (process.env.BLOB_READ_WRITE_TOKEN) {
-        const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
-          access: "public",
-        });
-        blobUrl = blob.url;
+        console.log(`[DEBUG] Uploading to Vercel Blob: hospital/${folder_id}/${file.originalname}`);
+        try {
+          const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
+            access: "public",
+          });
+          blobUrl = blob.url;
+          console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
+        } catch (blobError) {
+          console.error(`[ERROR] Failed to upload to Vercel Blob:`, blobError);
+          res.status(500).json({ 
+            error: "Upload to storage failed", 
+            details: String(blobError)
+          });
+          return;
+        }
       } else {
         // Fallback: save URL placeholder if no blob storage
+        console.warn(`[WARN] BLOB_READ_WRITE_TOKEN not configured. Using fallback URL.`);
         blobUrl = `/uploads/${folder_id}/${file.originalname}`;
       }
 
@@ -95,13 +107,14 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
         RETURNING *
       `;
 
+      console.log(`[DEBUG] File saved to database with blob_url: ${blobUrl}`);
       uploaded.push(result[0]);
     }
 
     res.status(201).json(uploaded);
   } catch (error) {
     console.error("Upload error:", error);
-    res.status(500).json({ error: "Upload failed" });
+    res.status(500).json({ error: "Upload failed", details: String(error) });
   }
 });
 

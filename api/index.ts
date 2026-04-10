@@ -20,6 +20,12 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Cache control middleware
+app.use((_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
+
 // Health check
 app.get("/", (_req: Request, res: Response) => {
   res.json({ 
