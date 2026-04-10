@@ -178,7 +178,7 @@ router.get("/:id/download", async (req: Request, res: Response) => {
 
     console.log(`[DEBUG] Download request for file ID: ${id}`);
 
-    const files = await sql`SELECT * FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+    const files = await sql`SELECT id, name, file_data, mime_type, size FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
 
     if (files.length === 0) {
       console.log(`[DEBUG] File not found with ID: ${id}`);
@@ -187,32 +187,35 @@ router.get("/:id/download", async (req: Request, res: Response) => {
     }
 
     const file = files[0];
-    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}, mime_type: ${file.mime_type}`);
+    console.log(`[DEBUG] Found file: ${file.name}, size: ${file.size}, mime_type: ${file.mime_type}`);
 
-    // Se for URL do Vercel Blob (https), redireciona com headers de download
-    if (file.blob_url && file.blob_url.startsWith("https://")) {
-      console.log(`[DEBUG] Redirecting to Vercel Blob URL: ${file.blob_url}`);
-      // Define headers para força download com o nome original
-      res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
-      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
-      res.setHeader("Cache-Control", "public, max-age=3600");
-      res.redirect(file.blob_url);
+    // Check if file_data exists
+    if (!file.file_data) {
+      console.log(`[DEBUG] File data not found in database for ID: ${id}`);
+      res.status(404).json({ error: "File data not found in database" });
       return;
     }
 
-    // Se for caminho local (fallback)
-    if (file.blob_url && file.blob_url.startsWith("/uploads/")) {
-      console.log(`[DEBUG] Local path detected (fallback): ${file.blob_url}`);
-      res.status(500).json({ 
-        error: "File not available", 
-        reason: "File was uploaded without Vercel Blob storage. Please upload again with proper configuration.",
-        path: file.blob_url 
-      });
-      return;
+    // Convert BYTEA to Buffer
+    let fileBuffer: Buffer;
+    if (file.file_data instanceof Buffer) {
+      fileBuffer = file.file_data;
+    } else if (typeof file.file_data === "string") {
+      // Handle different encodings if needed
+      fileBuffer = Buffer.from(file.file_data, "binary");
+    } else {
+      fileBuffer = Buffer.from(file.file_data);
     }
 
-    console.log(`[DEBUG] Invalid blob_url format: ${file.blob_url}`);
-    res.status(500).json({ error: "File storage not properly configured", blob_url: file.blob_url });
+    console.log(`[DEBUG] Serving file from database: ${file.name}, buffer size: ${fileBuffer.length}`);
+
+    // Set response headers for download
+    res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+    res.setHeader("Content-Length", fileBuffer.length);
+
+    // Send file
+    res.send(fileBuffer);
   } catch (error) {
     console.error("Error downloading file:", error);
     res.status(500).json({ error: "Failed to download file", details: String(error) });

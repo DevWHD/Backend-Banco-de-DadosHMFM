@@ -1,7 +1,9 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
-import { put } from "@vercel/blob";
 import { getDb } from "../config/database";
+
+const router = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -82,38 +84,25 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      let blobUrl = "";
+      // Use a generic blob_url since we're storing in the database
+      const blobUrl = `db://file/${file.originalname}`;
       
-      if (process.env.BLOB_READ_WRITE_TOKEN) {
-        console.log(`[DEBUG] Uploading to Vercel Blob: hospital/${folder_id}/${file.originalname}`);
-        try {
-          const blob = await put(`hospital/${folder_id}/${file.originalname}`, file.buffer, {
-            access: "public",
-          });
-          blobUrl = blob.url;
-          console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
-        } catch (blobError) {
-          console.error(`[ERROR] Failed to upload to Vercel Blob:`, blobError);
-          res.status(500).json({ 
-            error: "Upload to storage failed", 
-            details: String(blobError)
-          });
-          return;
-        }
-      } else {
-        console.warn(`[WARN] BLOB_READ_WRITE_TOKEN not configured. Using fallback URL.`);
-        blobUrl = `/uploads/${folder_id}/${file.originalname}`;
-      }
+      console.log(`[DEBUG] Storing file in PostgreSQL database: ${file.originalname}`);
 
-      // Save record to database
+      // Save record to database with file content as BYTEA
       try {
         const result = await sql`
-          INSERT INTO files (name, folder_id, blob_url, size, mime_type)
-          VALUES (${file.originalname}, ${folder_id}, ${blobUrl}, ${file.size}, ${file.mimetype})
-          RETURNING *
+          INSERT INTO files (name, folder_id, blob_url, file_data, size, mime_type)
+          VALUES (${file.originalname}, ${folder_id}, ${blobUrl}, ${file.buffer}, ${file.size}, ${file.mimetype})
+          RETURNING id, name, folder_id, size, mime_type, created_at, updated_at
         `;
         console.log(`[DEBUG] File saved to database:`, result[0]);
-        uploaded.push(result[0]);
+        
+        // Return file info without the binary data
+        uploaded.push({
+          ...result[0],
+          download_url: `/api/files/${result[0].id}/download`
+        });
       } catch (dbError) {
         console.error(`[ERROR] Failed to save to database:`, dbError);
         res.status(500).json({ 
