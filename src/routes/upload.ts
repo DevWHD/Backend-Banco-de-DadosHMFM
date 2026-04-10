@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import multer from "multer";
+import { put } from "@vercel/blob";
 import { getDb } from "../config/database";
 
 const router = Router();
@@ -81,11 +82,30 @@ router.post("/", upload.array("files"), async (req: Request, res: Response) => {
     const uploaded = [];
 
     for (const file of files) {
-      // Store file reference with simple URL
-      const blobUrl = `file://${file.originalname}`;
+      let blobUrl = "";
       
-      console.log(`[DEBUG] Registering file: ${file.originalname}, size: ${file.size}`);
+      console.log(`[DEBUG] Processing file: ${file.originalname}, size: ${file.size}`);
 
+      // Try to upload to Vercel Blob if token is configured
+      if (process.env.BLOB_READ_WRITE_TOKEN) {
+        try {
+          console.log(`[DEBUG] Uploading to Vercel Blob...`);
+          const blob = await put(`hospital-docs/${folder_id}/${file.originalname}`, file.buffer, {
+            access: "public",
+          });
+          blobUrl = blob.url;
+          console.log(`[DEBUG] Vercel Blob URL: ${blobUrl}`);
+        } catch (blobError) {
+          console.error(`[WARN] Vercel Blob upload failed:`, blobError);
+          // Fallback if Vercel Blob fails
+          blobUrl = `buffer://${folder_id}/${file.originalname}`;
+        }
+      } else {
+        // No token: use buffer storage marker
+        console.log(`[WARN] BLOB_READ_WRITE_TOKEN not configured. Using in-memory reference.`);
+        blobUrl = `buffer://${folder_id}/${file.originalname}`;
+      }
+      
       // Save record to database
       try {
         const result = await sql`

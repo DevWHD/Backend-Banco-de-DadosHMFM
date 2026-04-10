@@ -178,7 +178,7 @@ router.get("/:id/download", async (req: Request, res: Response) => {
 
     console.log(`[DEBUG] Download request for file ID: ${id}`);
 
-    const files = await sql`SELECT id, name, file_data, mime_type, size FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
+    const files = await sql`SELECT id, name, blob_url, mime_type, size FROM files WHERE id = ${parseInt(Array.isArray(id) ? id[0] : id)}`;
 
     if (files.length === 0) {
       console.log(`[DEBUG] File not found with ID: ${id}`);
@@ -187,37 +187,30 @@ router.get("/:id/download", async (req: Request, res: Response) => {
     }
 
     const file = files[0];
-    console.log(`[DEBUG] Found file: ${file.name}, size: ${file.size}, mime_type: ${file.mime_type}`);
+    console.log(`[DEBUG] Found file: ${file.name}, blob_url: ${file.blob_url}, size: ${file.size}`);
 
-    // Check if file_data exists
-    if (!file.file_data) {
-      console.log(`[DEBUG] File data not found in database for ID: ${id}`);
-      res.status(404).json({ error: "File data not found in database" });
+    // If it's a Vercel Blob URL (https), redirect to it
+    if (file.blob_url && file.blob_url.startsWith("https://")) {
+      console.log(`[DEBUG] Redirecting to Vercel Blob: ${file.blob_url}`);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+      res.redirect(file.blob_url);
       return;
     }
 
-    // Convert file_data to Buffer
-    let fileBuffer: Buffer;
-    
-    if (file.file_data instanceof Buffer) {
-      fileBuffer = file.file_data;
-    } else if (typeof file.file_data === "string") {
-      // If it's a string (hex encoded by postgres), convert it
-      fileBuffer = Buffer.from(file.file_data, "hex");
-    } else {
-      // Try to convert whatever it is to a buffer
-      fileBuffer = Buffer.from(file.file_data);
+    // If it's a buffer:// URL (not stored), return error
+    if (file.blob_url && file.blob_url.startsWith("buffer://")) {
+      console.log(`[DEBUG] File stored in buffer (not persistent): ${file.blob_url}`);
+      res.status(410).json({ 
+        error: "File not available",
+        reason: "File was uploaded without Vercel Blob storage configured. Please configure BLOB_READ_WRITE_TOKEN and re-upload.",
+        blob_url: file.blob_url
+      });
+      return;
     }
 
-    console.log(`[DEBUG] Serving file from database: ${file.name}, buffer size: ${fileBuffer.length}`);
-
-    // Set response headers for download
-    res.setHeader("Content-Type", file.mime_type || "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
-    res.setHeader("Content-Length", fileBuffer.length);
-
-    // Send file
-    res.send(fileBuffer);
+    // Unknown URL format
+    console.log(`[DEBUG] Unknown blob_url format: ${file.blob_url}`);
+    res.status(404).json({ error: "File storage not properly configured", blob_url: file.blob_url });
   } catch (error) {
     console.error("Error downloading file:", error);
     res.status(500).json({ error: "Failed to download file", details: String(error) });
